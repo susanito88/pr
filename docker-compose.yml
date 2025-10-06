@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  webserver:
+    build: .
+    container_name: pr_labs_webserver
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./src:/app/src   # mount source files
+
+  client:
+    build: .
+    container_name: pr_labs_client
+    depends_on:
+      - webserver
+    volumes:
+      - ./downloads:/app/downloads  # mount folder to save files
+    entrypoint: ["python", "client.py"]  # we override CMD
