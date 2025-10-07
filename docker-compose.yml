@@ -7,7 +7,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./src:/app/src   # mount source files
+      - ./src:/app/src
 
   client:
     build: .
@@ -15,5 +15,5 @@ services:
     depends_on:
       - webserver
     volumes:
-      - ./downloads:/app/downloads  # mount folder to save files
-    entrypoint: ["python", "client.py"]  # we override CMD
+      - ./downloads:/app/downloads
+    entrypoint: ["python", "client.py"]
