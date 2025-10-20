@@ -13,13 +13,11 @@ def download(url, save_dir):
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    # Connect to server
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((host, port))
         request = f"GET {path} HTTP/1.1\r\nHost: {host}\r\n\r\n"
         s.sendall(request.encode())
 
-        # Receive response
         response = b""
         while True:
             chunk = s.recv(1024)
@@ -27,11 +25,9 @@ def download(url, save_dir):
                 break
             response += chunk
 
-    # Separate headers and body
     header, _, body = response.partition(b"\r\n\r\n")
     headers = header.decode(errors="ignore")
 
-    # Determine content type
     if "Content-Type: text/html" in headers:
         print(body.decode(errors="ignore"))
     elif "Content-Type: image/png" in headers:

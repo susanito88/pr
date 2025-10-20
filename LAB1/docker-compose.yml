@@ -4,16 +4,19 @@ services:
   webserver:
     build: .
     container_name: pr_labs_webserver
+    working_dir: /app
     ports:
       - "8080:8080"
     volumes:
-      - ./src:/app/src
+      - ./src:/app/src   # correct relative path
+    command: python server.py /app/src
 
   client:
     build: .
     container_name: pr_labs_client
     depends_on:
       - webserver
+    working_dir: /app
     volumes:
       - ./downloads:/app/downloads
     entrypoint: ["python", "client.py"]

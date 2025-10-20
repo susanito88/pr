@@ -1,0 +1,22 @@
+# PR_LABS/LAB2/docker-compose.yml
+services:
+  webserver:
+    build: .
+    container_name: lab2_webserver
+    working_dir: /app
+    ports:
+      - "8081:8080"                 # host port 8081 mapped to container port 8080
+    volumes:
+      - ./src:/app/src               # mount src folder from host
+      - ./multithread.py:/app/multithread.py  # mount the multithreaded server
+    command: python multithread.py /app/src     # run multithreaded server
+
+  client:
+    build: .
+    container_name: lab2_client
+    depends_on:
+      - webserver
+    working_dir: /app
+    volumes:
+      - ./downloads:/app/downloads
+    entrypoint: ["python", "client.py", "http://webserver:8080", "/app/downloads"]
