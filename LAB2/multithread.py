@@ -7,7 +7,9 @@ import time
 
 HOST = '0.0.0.0'
 PORT = 8080
-ROOT_DIR = "./src"  # adjust if using Docker volumes
+ROOT_DIR = "./src"
+
+request_counts = {}
 
 def generate_directory_listing(path, request_path):
     items = os.listdir(path)
@@ -19,7 +21,8 @@ def generate_directory_listing(path, request_path):
 
     for item in items:
         item_path = os.path.join(request_path, item)
-        html += f'<li><a href="{item_path}">{item}</a></li>'
+        count = request_counts.get(os.path.join(ROOT_DIR, item), 0)
+        html += f'<li><a href="{item_path}">{item}</a> (requested {count} times)</li>'
 
     html += '<li><a href="missing_file.html">Click to test 404 error</a></li>'
     html += "</ul></body></html>"
@@ -41,8 +44,17 @@ def handle_request(conn):
         path = unquote(path)
         fs_path = os.path.join(ROOT_DIR, path.lstrip("/"))
 
-
+        # simulate work
         time.sleep(1)
+
+        # naive increment (race-prone!)
+        if os.path.isfile(fs_path):
+            if fs_path not in request_counts:
+                request_counts[fs_path] = 0
+            # add a tiny delay to force interleaving
+            temp = request_counts[fs_path]
+            time.sleep(0.01)
+            request_counts[fs_path] = temp + 1
 
         if os.path.isdir(fs_path):
             content = generate_directory_listing(fs_path, path)
@@ -75,11 +87,10 @@ def main():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((HOST, PORT))
         s.listen(5)
-        print(f"Serving HTTP on {HOST}:{PORT} from {ROOT_DIR} (multithreaded)")
+        print(f"Serving HTTP on {HOST}:{PORT} from {ROOT_DIR} (multithreaded, race-prone counter)")
 
         while True:
             conn, addr = s.accept()
-            # Start a new thread for each request
             threading.Thread(target=handle_request, args=(conn,), daemon=True).start()
 
 if __name__ == "__main__":
