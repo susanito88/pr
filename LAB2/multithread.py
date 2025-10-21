@@ -9,20 +9,28 @@ HOST = '0.0.0.0'
 PORT = 8080
 ROOT_DIR = "./src"
 
-request_counts = {}
+# Shared counters
+request_counts_naive = {}
+request_counts_safe = {}
+request_counts_lock = threading.Lock()
 
-def generate_directory_listing(path, request_path):
-    items = os.listdir(path)
+def generate_directory_listing(fs_dir_path, request_path):
+    items = os.listdir(fs_dir_path)
     html = f"<html><body><h2>Directory listing for {request_path}</h2><ul>"
 
+    # Parent directory link
     if request_path != "/":
         parent_path = os.path.dirname(request_path.rstrip('/'))
         html += f'<li><a href="{parent_path or "/"}">.. (parent directory)</a></li>'
 
     for item in items:
-        item_path = os.path.join(request_path, item)
-        count = request_counts.get(os.path.join(ROOT_DIR, item), 0)
-        html += f'<li><a href="{item_path}">{item}</a> (requested {count} times)</li>'
+        item_fs_path = os.path.join(fs_dir_path, item)
+        # URL path for links
+        item_url_path = os.path.join(request_path, item).replace("\\", "/")
+
+        naive_count = request_counts_naive.get(item_fs_path, 0)
+        safe_count = request_counts_safe.get(item_fs_path, 0)
+        html += f'<li><a href="{item_url_path}">{item}</a> (naive: {naive_count}, safe: {safe_count})</li>'
 
     html += '<li><a href="missing_file.html">Click to test 404 error</a></li>'
     html += "</ul></body></html>"
@@ -44,24 +52,30 @@ def handle_request(conn):
         path = unquote(path)
         fs_path = os.path.join(ROOT_DIR, path.lstrip("/"))
 
-        # simulate work
-        time.sleep(1)
+        time.sleep(0.5)
 
-        # naive increment (race-prone!)
-        if os.path.isfile(fs_path):
-            if fs_path not in request_counts:
-                request_counts[fs_path] = 0
-            # add a tiny delay to force interleaving
-            temp = request_counts[fs_path]
-            time.sleep(0.01)
-            request_counts[fs_path] = temp + 1
+        if os.path.exists(fs_path):
+            # Naive (race-prone)
+            if fs_path not in request_counts_naive:
+                request_counts_naive[fs_path] = 0
+            temp = request_counts_naive[fs_path]
+            time.sleep(0.01)  # force race condition
+            request_counts_naive[fs_path] = temp + 1
 
+            # Safe (synchronized)
+            with request_counts_lock:
+                if fs_path not in request_counts_safe:
+                    request_counts_safe[fs_path] = 0
+                request_counts_safe[fs_path] += 1
+
+        # Serve directories
         if os.path.isdir(fs_path):
             content = generate_directory_listing(fs_path, path)
             header = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
             conn.sendall(header.encode() + content)
             return
 
+        # Serve files
         if not os.path.isfile(fs_path):
             header = "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\n\r\n"
             body = f"<html><body><h1>404 Not Found</h1><p>{path} not found.</p></body></html>"
@@ -87,7 +101,7 @@ def main():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((HOST, PORT))
         s.listen(5)
-        print(f"Serving HTTP on {HOST}:{PORT} from {ROOT_DIR} (multithreaded, race-prone counter)")
+        print(f"Serving HTTP on {HOST}:{PORT} from {ROOT_DIR}")
 
         while True:
             conn, addr = s.accept()
@@ -95,3 +109,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

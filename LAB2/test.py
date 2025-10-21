@@ -2,7 +2,7 @@ import requests
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-URL = "http://localhost:8080/image.png"  # change if needed
+URL = "http://localhost:8080/subdir/hello.html"  # change if needed
 
 def make_request(i):
     r = requests.get(URL)
