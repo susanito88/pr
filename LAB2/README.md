@@ -28,25 +28,29 @@ Each screenshot below illustrates a completed step or feature from the lab.
 ### 🧩 docker-compose.yml
 
 ```yaml
-version: "3.9"
-
+# PR_LABS/LAB2/docker-compose.yml
 services:
   webserver:
-    build: ..
-    container_name: pr_labs_webserver
+    build: .
+    container_name: lab2_webserver
+    working_dir: /app
     ports:
-      - "8080:8080"
+      - "8081:8080"                 # host port 8081 mapped to container port 8080
     volumes:
-      - ./src:/app/src
+      - ./src:/app/src               # mount src folder from host
+      - ./multithread.py:/app/multithread.py  # mount the multithreaded server
+    command: python multithread.py /app/src     # run multithreaded server
 
   client:
-    build: ..
-    container_name: pr_labs_client
+    build: .
+    container_name: lab2_client
     depends_on:
       - webserver
+    working_dir: /app
     volumes:
       - ./downloads:/app/downloads
-    entrypoint: [ "python", "client.py" ]
+    entrypoint: ["python", "client.py", "http://webserver:8080", "/app/downloads"]
+
 
 ```
   
@@ -58,119 +62,144 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-COPY server.py .
+COPY multithread.py .
 COPY client.py .
 COPY src ./src
 
 EXPOSE 8080
 
-# Default command is server
-CMD ["python", "server.py", "./src"] 
+CMD ["python", "multithread.py", "./src"]
+
 ```
 *Dockerfile used to build the server image.*
 
 ---
 
-## 4. Starting the Container
+## 4. Concurrency Experiment (10 parallel requests)
+Purpose: compare total time for 10 concurrent requests with and without threading, while the handler sleeps ~1 second per request.
 
 **Screenshot:**  
-![img_1.png](LAB1/screenshots/img_1.png)
-*Container started successfully and server initialized.*
+![img_4.png](screenshots/img.png)
 
----
+Given that each request takes approximately 1 second to process, for a single-threaded server, the total time for 10 requests would be around 10 seconds, the multithreaded server should handle them concurrently, resulting in a total time much shorter
 
-## 5. Running the Server Inside the Container
+Added integration snippet (client-side concurrency test):
+
+```python
+# concurrency_test.py - simple client to measure concurrent handling
+# Run this from the host or the client container. Uses only stdlib.
+import threading
+import time
+import urllib.request
+
+URL = "http://localhost:8080/"  # adjust to your server address
+N = 10
+results = [None] * N
+
+def worker(i):
+    t0 = time.time()
+    try:
+        with urllib.request.urlopen(URL) as r:
+            results[i] = (r.getcode(), time.time() - t0)
+    except Exception as e:
+        results[i] = ("ERR", str(e))
+
+threads = [threading.Thread(target=worker, args=(i,)) for i in range(N)]
+start = time.time()
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
+end = time.time()
+
+print(f"Total elapsed: {end - start:.3f}s")
+print("Per-request results:")
+for r in results:
+    print(r)
+```
+
+This script demonstrates how we measured speedup when the server handles requests concurrently (the multithreaded server will finish much faster than a naive single-threaded implementation).
+
+## 5. Adding Counters
+
+I added a naive and a thread-safe counter to track the number of requests served by the server.
 
 **Screenshot:**  
-![img_2.png](LAB1/screenshots/img_2.png)
-*HTTP server launched inside the container with the specified directory.*
+![img_1.png](screenshots/img_1.png)
 
----
-
-## 6. Contents of the Served Directory
-
-
+After serving multiple requests, the thread-safe counter accurately reflects the total number of requests, while the naive counter may show inconsistencies due to race conditions:
 **Screenshot:**  
-![img.png](LAB1/screenshots/img.png)
-*Directory containing files served by the HTTP server.*
+![img_3.png](screenshots/img_2.png)
 
----
+Added integration snippet (excerpt from `multithread.py` showing counters and how they're updated):
 
-## 7. HTTP Requests from the Browser
+```python
+# counters (excerpt from multithread.py)
+import threading
+import time
+import os
 
-### a) Inexistent File (404)
-**Screenshot:**  
-![img_4.png](LAB1/screenshots/img_4.png)
-*Request to a non-existent file correctly returns a 404 error.*
+request_counts_naive = {}
+request_counts_safe = {}
+request_counts_lock = threading.Lock()
 
-### b) HTML File with Image
-**Screenshot:**  
-![img_5.png](LAB1/screenshots/img_5.png) 
-*Server correctly serves an HTML page displaying an image.*
+# inside the request handler, once fs_path is resolved and exists:
+if os.path.exists(fs_path):
+    # Naive counter (race-prone)
+    if fs_path not in request_counts_naive:
+        request_counts_naive[fs_path] = 0
+    temp = request_counts_naive[fs_path]
+    # small sleep to demonstrate race condition when many threads update concurrently
+    time.sleep(0.01)
+    request_counts_naive[fs_path] = temp + 1
 
-### c) PDF File
-**Screenshot:**  
-![img_6.png](LAB1/screenshots/img_6.png)
-*Browser successfully receives and displays a served PDF file.*
+    # Thread-safe counter
+    with request_counts_lock:
+        if fs_path not in request_counts_safe:
+            request_counts_safe[fs_path] = 0
+        request_counts_safe[fs_path] += 1
 
-### d) PNG File
-**Screenshot:**  
-![img_7.png](LAB1/screenshots/img_7.png)
-*Server successfully delivers a PNG image file to the browser.*
+# You can inspect these dicts (e.g. print or render in directory listing) to compare behaviour.
+```
 
----
+Notes on subdirectories: when rendering directory listings the README shows counts by looking up the file-system path keys in the same dicts. To avoid mismatches (for example: relative vs absolute paths) make sure both the handler and the directory listing use a consistent, normalized key such as `os.path.abspath(...)`.
 
-## 8. Client Execution (if implemented)
+## 6. Rate Limiting
 
-### How the Client is Run
-**Screenshot:**  
-![img_2.png](LAB1/screenshots/img_2.png)
-*Command used to execute the client application.*
+Implementation: a per-IP sliding window using timestamps protected by a lock. If a client exceeds MAX_REQUESTS_PER_SEC (set to 5), the server returns 429 Too Many Requests.
 
-### Saved Files
-**Screenshot:**  
-![img_9.png](LAB1/screenshots/img_9.png)
-*Files saved locally by the client after server response.*
+Added integration snippet (excerpt from `multithread.py` showing the rate limiter):
 
----
+```python
+# rate limiting (excerpt from multithread.py)
+import time
+import threading
 
-## 9. Directory Listing (if implemented)
+RATE_LIMIT = 5          # requests
+WINDOW_SECONDS = 1      # per 1 second
+rate_limits = {}        # client_ip -> list of timestamps
+rate_lock = threading.Lock()
 
-### Directory Listing Page
-**Screenshot:**  
-![img.png](LAB1/screenshots/img.png)
-*Auto-generated directory listing page served by the server.*
+def is_rate_limited(client_ip):
+    """Return True if client exceeded RATE_LIMIT per WINDOW_SECONDS."""
+    current_time = time.time()
+    with rate_lock:
+        if client_ip not in rate_limits:
+            rate_limits[client_ip] = []
 
-### Subdirectory View
-**Screenshot:**  
-![img_11.png](LAB1/screenshots/img_11.png)
-*Subdirectory structure displayed correctly in the browser.*
+        # Remove old timestamps outside the window
+        rate_limits[client_ip] = [ts for ts in rate_limits[client_ip] if current_time - ts < WINDOW_SECONDS]
 
----
+        if len(rate_limits[client_ip]) >= RATE_LIMIT:
+            return True
 
-## 10. Browsing a Friend’s Server (if applicable)
+        # Record this request
+        rate_limits[client_ip].append(current_time)
+        return False
 
-### Network Setup
-  
-*My collegue and I connected on the same hotspot. Then through the terminal we found the IP adress, using `ipconfig` or `ifconfig`, then I was able to access her server and send requests through my client*
-
-### Finding Friend’s IP
-**Screenshot:**  
-![img_13.png](LAB1/screenshots/img_13.png)
-*Friend’s server IP address identified on the same network.*
-
-### Friend’s Server Contents
-**Screenshot:**  
-![img_12.png](LAB1/screenshots/img_12.png)
-*Directory contents displayed from the friend’s server.*
-
-### Requests to Friend’s Server
-**Screenshot:**  
-![img_14.png](LAB1/screenshots/img_14.png)
-*Successful file requests made to the friend’s server using browser or client.*
-
----
-
+# Usage: call is_rate_limited(client_ip) at the start of request processing and return
+# a 429 response when it returns True.
+```
 
 ## 11. Conclusion
 

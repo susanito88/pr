@@ -74,7 +74,7 @@ CMD ["python", "server.py", "./src"]
 ## 4. Starting the Container
 
 **Screenshot:**  
-![img_1.png](LAB1/screenshots/img_1.png)
+![img_1.png](screenshots/img_1.png)
 *Container started successfully and server initialized.*
 
 ---
@@ -82,7 +82,7 @@ CMD ["python", "server.py", "./src"]
 ## 5. Running the Server Inside the Container
 
 **Screenshot:**  
-![img_2.png](LAB1/screenshots/img_2.png)
+![img_2.png](screenshots/img_2.png)
 *HTTP server launched inside the container with the specified directory.*
 
 ---
@@ -91,7 +91,7 @@ CMD ["python", "server.py", "./src"]
 
 
 **Screenshot:**  
-![img.png](LAB1/screenshots/img.png)
+![img.png](screenshots/img.png)
 *Directory containing files served by the HTTP server.*
 
 ---
@@ -100,22 +100,22 @@ CMD ["python", "server.py", "./src"]
 
 ### a) Inexistent File (404)
 **Screenshot:**  
-![img_4.png](LAB1/screenshots/img_4.png)
+![img_4.png](screenshots/img_4.png)
 *Request to a non-existent file correctly returns a 404 error.*
 
 ### b) HTML File with Image
 **Screenshot:**  
-![img_5.png](LAB1/screenshots/img_5.png) 
+![img_5.png](screenshots/img_5.png) 
 *Server correctly serves an HTML page displaying an image.*
 
 ### c) PDF File
 **Screenshot:**  
-![img_6.png](LAB1/screenshots/img_6.png)
+![img_6.png](screenshots/img_6.png)
 *Browser successfully receives and displays a served PDF file.*
 
 ### d) PNG File
 **Screenshot:**  
-![img_7.png](LAB1/screenshots/img_7.png)
+![img_7.png](screenshots/img_7.png)
 *Server successfully delivers a PNG image file to the browser.*
 
 ---
@@ -124,12 +124,12 @@ CMD ["python", "server.py", "./src"]
 
 ### How the Client is Run
 **Screenshot:**  
-![img_2.png](LAB1/screenshots/img_2.png)
+![img_2.png](screenshots/img_2.png)
 *Command used to execute the client application.*
 
 ### Saved Files
 **Screenshot:**  
-![img_9.png](LAB1/screenshots/img_9.png)
+![img_9.png](screenshots/img_9.png)
 *Files saved locally by the client after server response.*
 
 ---
@@ -138,12 +138,12 @@ CMD ["python", "server.py", "./src"]
 
 ### Directory Listing Page
 **Screenshot:**  
-![img.png](LAB1/screenshots/img.png)
+![img.png](screenshots/img.png)
 *Auto-generated directory listing page served by the server.*
 
 ### Subdirectory View
 **Screenshot:**  
-![img_11.png](LAB1/screenshots/img_11.png)
+![img_11.png](screenshots/img_11.png)
 *Subdirectory structure displayed correctly in the browser.*
 
 ---
@@ -156,17 +156,17 @@ CMD ["python", "server.py", "./src"]
 
 ### Finding Friend’s IP
 **Screenshot:**  
-![img_13.png](LAB1/screenshots/img_13.png)
+![img_13.png](screenshots/img_13.png)
 *Friend’s server IP address identified on the same network.*
 
 ### Friend’s Server Contents
 **Screenshot:**  
-![img_12.png](LAB1/screenshots/img_12.png)
+![img_12.png](screenshots/img_12.png)
 *Directory contents displayed from the friend’s server.*
 
 ### Requests to Friend’s Server
 **Screenshot:**  
-![img_14.png](LAB1/screenshots/img_14.png)
+![img_14.png](screenshots/img_14.png)
 *Successful file requests made to the friend’s server using browser or client.*
 
 ---
