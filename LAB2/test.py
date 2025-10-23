@@ -10,8 +10,8 @@ def make_request(i):
 
 start = time.time()
 
-with ThreadPoolExecutor(max_workers=10) as executor:
-    executor.map(make_request, range(10))
+with ThreadPoolExecutor(max_workers=100) as executor:
+    executor.map(make_request, range(100))
 
 end = time.time()
 print(f"All 10 requests completed in {end - start:.2f} seconds")

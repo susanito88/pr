@@ -15,7 +15,7 @@ request_counts_safe = {}
 request_counts_lock = threading.Lock()
 
 # Rate limiting
-RATE_LIMIT = 5
+RATE_LIMIT = 100
 WINDOW_SECONDS = 1
 rate_limits = {}        # client_ip -> list of timestamps
 rate_lock = threading.Lock()
