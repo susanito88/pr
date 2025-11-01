@@ -6,7 +6,7 @@ import threading
 import time
 
 HOST = '0.0.0.0'
-PORT = 8080
+PORT = 8081
 ROOT_DIR = os.path.abspath("./src")
 
 # Request counters
@@ -15,7 +15,7 @@ request_counts_safe = {}
 request_counts_lock = threading.Lock()
 
 # Rate limiting
-RATE_LIMIT = 100
+RATE_LIMIT = 5
 WINDOW_SECONDS = 1
 rate_limits = {}        # client_ip -> list of timestamps
 rate_lock = threading.Lock()
@@ -52,13 +52,13 @@ def is_rate_limited(client_ip):
         if client_ip not in rate_limits:
             rate_limits[client_ip] = []
 
-        # Remove old timestamps outside the window
+        # remove old timestamps
         rate_limits[client_ip] = [ts for ts in rate_limits[client_ip] if current_time - ts < WINDOW_SECONDS]
 
         if len(rate_limits[client_ip]) >= RATE_LIMIT:
             return True
 
-        # Record this request
+        # new ts
         rate_limits[client_ip].append(current_time)
         return False
 

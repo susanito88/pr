@@ -2,7 +2,7 @@ import requests
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-URL = "http://localhost:8080/doc.pdf"
+URL = "http://localhost:8081/doc.pdf"
 
 def make_request(i):
     r = requests.get(URL)
@@ -10,8 +10,8 @@ def make_request(i):
 
 start = time.time()
 
-with ThreadPoolExecutor(max_workers=100) as executor:
-    executor.map(make_request, range(100))
+with ThreadPoolExecutor(max_workers=20) as executor:
+    executor.map(make_request, range(20))
 
 end = time.time()
 print(f"All 10 requests completed in {end - start:.2f} seconds")
