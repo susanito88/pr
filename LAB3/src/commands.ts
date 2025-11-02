@@ -22,7 +22,6 @@ import { Board } from "./board.js";
  */
 export async function look(board: Board, playerId: string): Promise<string> {
   return board.renderFor(playerId);
-  // implement with glue code only, at most three lines
 }
 
 /**
@@ -48,8 +47,8 @@ export async function flip(
   row: number,
   column: number
 ): Promise<string> {
-  throw new Error("flip function not implemented");
-  // implement with glue code only, at most three lines
+  board.flip(row, column, playerId);
+  return board.renderFor(playerId);
 }
 
 /**
@@ -81,7 +80,7 @@ export async function map(
   f: (card: string) => Promise<string>
 ): Promise<string> {
   throw new Error("map function not implemented");
-  // implement with glue code only, at most three lines
+  // Problem 4 - implement later
 }
 
 /**
@@ -96,5 +95,5 @@ export async function map(
  */
 export async function watch(board: Board, playerId: string): Promise<string> {
   throw new Error("watch function not implemented");
-  // implement with glue code only, at most three lines
+  // Problem 5 - implement later
 }

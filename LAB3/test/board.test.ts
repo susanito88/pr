@@ -8,6 +8,7 @@ import { Board } from "../src/board.js";
 /**
  * Tests for the Board abstract data type.
  */
+
 describe("Board parse + render", () => {
   it("parses perfect.txt and renders all down", async () => {
     const b = await Board.parseFromFile("boards/perfect.txt");
@@ -24,6 +25,44 @@ describe("Board parse + render", () => {
   });
 });
 
+describe("Board flip operations", () => {
+  it("flips first card face up", async () => {
+    const b = await Board.parseFromFile("boards/perfect.txt");
+    b.flip(0, 0, "alice");
+    const state = b.renderFor("alice");
+    const lines = state.trimEnd().split("\n");
+
+    assert(lines[1] !== undefined, "should have spot at position 1");
+    assert.match(lines[1], /^my /, "first card should be controlled by alice");
+  });
+
+  it("flips matching pair and removes on next move", async () => {
+    const b = await Board.parseFromFile("boards/perfect.txt");
+    // Flip two cards that match (you need to know board layout)
+    b.flip(0, 0, "alice"); // first card
+    b.flip(0, 1, "alice"); // second card (if they match)
+    b.flip(1, 0, "alice"); // triggers cleanup (rule 3-A)
+
+    const state = b.renderFor("alice");
+    // Check that matched cards are now "none"
+  });
+
+  it("throws error when flipping empty space", async () => {
+    const b = await Board.parseFromFile("boards/perfect.txt");
+
+    // Flip matching pair: (0,0)=🦄 and (0,1)=🦄
+    b.flip(0, 0, "alice"); // First card
+    b.flip(0, 1, "alice"); // Second card - MATCH!
+
+    // Start new first card - triggers cleanup (rule 3-A)
+    // This removes the matched cards at (0,0) and (0,1)
+    b.flip(1, 0, "alice");
+
+    // Now (0,0) should be empty ("none")
+    // Trying to flip it should throw
+    assert.throws(() => b.flip(0, 0, "alice"), /no card/);
+  });
+});
 /**
  * Example test case that uses async/await to test an asynchronous function.
  * Feel free to delete these example tests.
