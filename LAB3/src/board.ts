@@ -33,6 +33,8 @@ export class Board {
   private readonly cols: number;
   private readonly grid: Spot[][];
   private readonly playerStates: Map<string, PlayerState> = new Map();
+  // One deferred signal per spot, used to wake up waiters when a spot changes
+  private readonly spotSignals: { promise: Promise<void>; resolve: () => void }[][];
 
   // Abstraction function:
   //   Represents a rows x cols Memory Scramble game board where each position
@@ -72,6 +74,15 @@ export class Board {
       g.push(row);
     }
     this.grid = g;
+    // initialize per-spot signals
+    this.spotSignals = [];
+    for (let r = 0; r < rows; r++) {
+      const rowSignals: { promise: Promise<void>; resolve: () => void }[] = [];
+      for (let c = 0; c < cols; c++) {
+        rowSignals.push(this.makeDeferred());
+      }
+      this.spotSignals.push(rowSignals);
+    }
     this.checkRep();
   }
 
@@ -142,7 +153,7 @@ export class Board {
    * @throws Error if no card at that position (rule 1-A, 2-A)
    * @throws Error if trying to flip second card that's already controlled (rule 2-B)
    */
-  public flip(row: number, col: number, player: string): void {
+  public async flip(row: number, col: number, player: string): Promise<void> {
     // Bounds check
     if (row < 0 || row >= this.rows || col < 0 || col >= this.cols) {
       throw new Error(`position out of bounds: (${row}, ${col})`);
@@ -169,7 +180,7 @@ export class Board {
     const isFirstCard = state.firstCard === null;
 
     if (isFirstCard) {
-      this.flipFirstCard(row, col, player, spot, state);
+      await this.flipFirstCard(row, col, player, spot, state);
     } else {
       this.flipSecondCard(row, col, player, spot, state);
     }
@@ -180,34 +191,38 @@ export class Board {
   /**
    * Handle flipping the first card of a pair.
    */
-  private flipFirstCard(
+  private async flipFirstCard(
     row: number,
     col: number,
     player: string,
     spot: Spot,
     state: PlayerState
-  ): void {
+  ): Promise<void> {
     // Rule 1-A: No card there
     if (spot.card === null) {
       throw new Error("no card at that position");
     }
 
-    // Rule 1-D: Card controlled by another player - for now, fail
-    // (will implement waiting in Problem 3)
-    if (spot.controller !== null && spot.controller !== player) {
-      throw new Error("card is controlled by another player");
+    // Rule 1-D: If card controlled by another player, wait until available
+    while (spot.controller !== null && spot.controller !== player) {
+      const signalRow = this.spotSignals[row]!;
+      const signal = signalRow[col]!;
+      await signal.promise;
     }
 
     // Rule 1-B: Face down card - turn it up
     if (!spot.faceUp) {
       spot.faceUp = true;
+      this.notifySpot(row, col);
     }
 
     // Rule 1-C: Already face up but not controlled - take control
     spot.controller = player;
+    this.notifySpot(row, col);
     state.firstCard = { row, col };
     state.secondCard = null;
     state.matched = false;
+    return;
   }
 
   /**
@@ -225,7 +240,10 @@ export class Board {
       // Relinquish control of first card
       if (state.firstCard) {
         const first = this.grid[state.firstCard.row]?.[state.firstCard.col];
-        if (first) first.controller = null;
+        if (first) {
+          first.controller = null;
+          this.notifySpot(state.firstCard.row, state.firstCard.col);
+        }
       }
       state.firstCard = null;
       throw new Error("no card at that position");
@@ -236,7 +254,10 @@ export class Board {
       // Relinquish control of first card
       if (state.firstCard) {
         const first = this.grid[state.firstCard.row]?.[state.firstCard.col];
-        if (first) first.controller = null;
+        if (first) {
+          first.controller = null;
+          this.notifySpot(state.firstCard.row, state.firstCard.col);
+        }
       }
       state.firstCard = null;
       throw new Error("card is already controlled");
@@ -245,6 +266,7 @@ export class Board {
     // Rule 2-C: Turn card face up if needed
     if (!spot.faceUp) {
       spot.faceUp = true;
+      this.notifySpot(row, col);
     }
 
     // Now check if cards match
@@ -261,12 +283,15 @@ export class Board {
     if (cardsMatch) {
       // Rule 2-D: Match! Keep control of both
       spot.controller = player;
+      this.notifySpot(row, col);
       state.secondCard = { row, col };
       state.matched = true;
     } else {
       // Rule 2-E: No match. Relinquish control of both
       firstSpot.controller = null;
+      this.notifySpot(state.firstCard!.row, state.firstCard!.col);
       spot.controller = null;
+      this.notifySpot(row, col);
       state.firstCard = null;
       state.secondCard = { row, col };
       state.matched = false;
@@ -286,11 +311,13 @@ export class Board {
         first.card = null;
         first.faceUp = false;
         first.controller = null;
+        this.notifySpot(state.firstCard.row, state.firstCard.col);
       }
       if (second && second.card !== null) {
         second.card = null;
         second.faceUp = false;
         second.controller = null;
+        this.notifySpot(state.secondCard.row, state.secondCard.col);
       }
     } else {
       // Rule 3-B: Turn non-matching cards face down (if not controlled)
@@ -298,12 +325,14 @@ export class Board {
         const first = this.grid[state.firstCard.row]?.[state.firstCard.col];
         if (first && first.card !== null && first.controller === null) {
           first.faceUp = false;
+          this.notifySpot(state.firstCard.row, state.firstCard.col);
         }
       }
       if (state.secondCard) {
         const second = this.grid[state.secondCard.row]?.[state.secondCard.col];
         if (second && second.card !== null && second.controller === null) {
           second.faceUp = false;
+          this.notifySpot(state.secondCard.row, state.secondCard.col);
         }
       }
     }
@@ -312,6 +341,20 @@ export class Board {
     state.firstCard = null;
     state.secondCard = null;
     state.matched = false;
+  }
+
+  private makeDeferred(): { promise: Promise<void>; resolve: () => void } {
+    const { promise, resolve } = Promise.withResolvers<void>();
+    return { promise, resolve };
+  }
+
+  private notifySpot(row: number, col: number): void {
+    const d = this.spotSignals[row]?.[col];
+    if (!d) return;
+    // resolve current deferred and replace with a new one
+    try { d.resolve(); } catch { /* already resolved; ignore */ }
+    const rowArr = this.spotSignals[row]!;
+    rowArr[col] = this.makeDeferred();
   }
 
   /**

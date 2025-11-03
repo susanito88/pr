@@ -47,7 +47,7 @@ export async function flip(
   row: number,
   column: number
 ): Promise<string> {
-  board.flip(row, column, playerId);
+  await board.flip(row, column, playerId);
   return board.renderFor(playerId);
 }
 

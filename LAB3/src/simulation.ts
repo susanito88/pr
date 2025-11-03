@@ -17,7 +17,7 @@ async function simulationMain(): Promise<void> {
     const filename = 'boards/ab.txt';
     const board: Board = await Board.parseFromFile(filename);
     const size = 5;
-    const players = 1;
+    const players = 3;
     const tries = 10;
     const maxDelayMilliseconds = 100;
 
@@ -31,17 +31,36 @@ async function simulationMain(): Promise<void> {
 
     /** @param playerNumber player to simulate */
     async function player(playerNumber: number): Promise<void> {
-        // TODO set up this player on the board if necessary
+        // set up this player on the board if necessary (no setup needed for current Board)
+        const playerId = `sim-${playerNumber}`;
 
         for (let jj = 0; jj < tries; ++jj) {
             try {
                 await timeout(Math.random() * maxDelayMilliseconds);
-                // TODO try to flip over a first card at (randomInt(size), randomInt(size))
-                //      which might wait until this player can control that card
+                // try to flip over a first card at a random position
+                const r1 = randomInt(size);
+                const c1 = randomInt(size);
+                try {
+                    await board.flip(r1, c1, playerId);
+                    // log state after first flip
+                    console.log(`Player ${playerId} flipped first: (${r1},${c1})`);
+                    console.log(board.renderFor(playerId));
+                } catch (err) {
+                    // first flip failed; skip this try
+                    continue;
+                }
 
                 await timeout(Math.random() * maxDelayMilliseconds);
-                // TODO and if that succeeded,
-                //      try to flip over a second card at (randomInt(size), randomInt(size))
+                // and if that succeeded, try to flip over a second card
+                const r2 = randomInt(size);
+                const c2 = randomInt(size);
+                try {
+                    await board.flip(r2, c2, playerId);
+                    console.log(`Player ${playerId} flipped second: (${r2},${c2})`);
+                    console.log(board.renderFor(playerId));
+                } catch (err) {
+                    // second flip failed; proceed to next try
+                }
             } catch (err) {
                 console.error('attempt to flip a card failed:', err);
             }
