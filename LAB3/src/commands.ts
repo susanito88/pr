@@ -79,8 +79,8 @@ export async function map(
   playerId: string,
   f: (card: string) => Promise<string>
 ): Promise<string> {
-  throw new Error("map function not implemented");
-  // Problem 4 - implement later
+  await board.mapCards(f);
+  return board.renderFor(playerId);
 }
 
 /**

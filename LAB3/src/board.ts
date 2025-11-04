@@ -11,7 +11,6 @@ import fs from "node:fs";
  * Represents a grid of card spaces where players can flip cards to find matching pairs.
  * Tracks which cards are face up/down and which player controls each card.
  *
- * Mutable and concurrency safe (will be made fully concurrent in Problem 3).
  */
 
 type Spot = {
@@ -378,6 +377,57 @@ export class Board {
     try { d.resolve(); } catch { /* already resolved; ignore */ }
     const rowArr = this.spotSignals[row]!;
     rowArr[col] = this.makeDeferred();
+  }
+
+  /**
+   * Apply an asynchronous transformer to every card label on the board.
+   * Face-up/down and controller state are unaffected.
+   * Replacements for the same original label are committed atomically to
+   * preserve pairwise consistency during interleavings.
+   *
+   * @param f async transformer from card label to replacement label
+   */
+  public async mapCards(f: (card: string) => Promise<string>): Promise<void> {
+    // Snapshot positions per original label under mutex
+    const labelToPositions = new Map<string, Array<{ r: number; c: number }>>();
+    await this.mutex.runExclusive(() => {
+      for (let r = 0; r < this.rows; r++) {
+        for (let c = 0; c < this.cols; c++) {
+          const card = this.grid[r]![c]!.card;
+          if (card !== null) {
+            let arr = labelToPositions.get(card);
+            if (!arr) {
+              arr = [];
+              labelToPositions.set(card, arr);
+            }
+            arr.push({ r, c });
+          }
+        }
+      }
+    });
+
+    // Transform each label in parallel
+    const tasks: Array<Promise<void>> = [];
+    for (const [label, positions] of labelToPositions.entries()) {
+      tasks.push((async () => {
+        const newLabel = await f(label);
+        assert(CARD_REGEX.test(newLabel), `map() produced invalid label: ${newLabel}`);
+        // Commit all occurrences of this label atomically
+        await this.mutex.runExclusive(() => {
+          for (const { r, c } of positions) {
+            const spot = this.grid[r]![c]!;
+            if (spot.card === label) {
+              spot.card = newLabel;
+              this.notifySpot(r, c);
+            }
+          }
+          // no change to faceUp/controller
+          this.checkRep();
+        });
+      })());
+    }
+
+    await Promise.all(tasks);
   }
 
   /**
