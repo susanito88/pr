@@ -35,6 +35,8 @@ export class Board {
   private readonly playerStates: Map<string, PlayerState> = new Map();
   // One deferred signal per spot, used to wake up waiters when a spot changes
   private readonly spotSignals: { promise: Promise<void>; resolve: () => void }[][];
+  // Global mutex to serialize board state mutations
+  private readonly mutex: AsyncMutex = new AsyncMutex();
 
   // Abstraction function:
   //   Represents a rows x cols Memory Scramble game board where each position
@@ -159,30 +161,59 @@ export class Board {
       throw new Error(`position out of bounds: (${row}, ${col})`);
     }
 
-    const spot = this.grid[row]?.[col];
-    if (!spot) {
-      throw new Error(`invalid position: (${row}, ${col})`);
-    }
+    let waiter: Promise<void> | undefined = undefined;
+    // Loop: attempt inside mutex; if not possible, await signal then retry
+    // Ensures atomic check-and-update and handles card removal while waiting
+    for (;;) {
+      let done = false;
+      await this.mutex.runExclusive(async () => {
+        const spot = this.grid[row]?.[col];
+        if (!spot) {
+          throw new Error(`invalid position: (${row}, ${col})`);
+        }
 
-    // Get or create player state
-    let state = this.playerStates.get(player);
-    if (!state) {
-      state = { firstCard: null, secondCard: null, matched: false };
-      this.playerStates.set(player, state);
-    }
+        // Get or create player state (inside lock)
+        let state = this.playerStates.get(player);
+        if (!state) {
+          state = { firstCard: null, secondCard: null, matched: false };
+          this.playerStates.set(player, state);
+        }
 
-    // Rule 3: Clean up previous move if player had completed a previous move
-    if (state.secondCard !== null) {
-      this.cleanupPreviousMove(player, state);
-    }
+        // Rule 3 cleanup if needed
+        if (state.secondCard !== null) {
+          this.cleanupPreviousMove(player, state);
+        }
 
-    // Determine if this is first or second card
-    const isFirstCard = state.firstCard === null;
-
-    if (isFirstCard) {
-      await this.flipFirstCard(row, col, player, spot, state);
-    } else {
-      this.flipSecondCard(row, col, player, spot, state);
+        const isFirstCard = state.firstCard === null;
+        if (isFirstCard) {
+          // If card doesn't exist anymore, fail immediately
+          if (spot.card === null) {
+            throw new Error("no card at that position");
+          }
+          // If controlled by another, set waiter and retry later
+          if (spot.controller !== null && spot.controller !== player) {
+            const signalRow = this.spotSignals[row]!;
+            const signal = signalRow[col]!;
+            waiter = signal.promise;
+            return; // not done; will wait outside
+          }
+          // Perform first-card flip now
+          await this.flipFirstCard(row, col, player, spot, state);
+          done = true;
+        } else {
+          // Second-card logic executes immediately (no waiting), may throw
+          this.flipSecondCard(row, col, player, spot, state);
+          done = true;
+        }
+      });
+      if (done) {
+        break;
+      }
+      // wait outside lock to avoid blocking other operations
+      if (waiter) {
+        await waiter;
+        waiter = undefined;
+      }
     }
 
     this.checkRep();
@@ -198,18 +229,10 @@ export class Board {
     spot: Spot,
     state: PlayerState
   ): Promise<void> {
-    // Rule 1-A: No card there
+    // Rule 1-A: No card there (rechecked inside mutex by caller before calling)
     if (spot.card === null) {
       throw new Error("no card at that position");
     }
-
-    // Rule 1-D: If card controlled by another player, wait until available
-    while (spot.controller !== null && spot.controller !== player) {
-      const signalRow = this.spotSignals[row]!;
-      const signal = signalRow[col]!;
-      await signal.promise;
-    }
-
     // Rule 1-B: Face down card - turn it up
     if (!spot.faceUp) {
       spot.faceUp = true;
@@ -403,5 +426,39 @@ export class Board {
       return card;
     });
     return new Board(rows, cols, cards);
+  }
+}
+
+/** Simple async mutex for serializing board mutations */
+class AsyncMutex {
+  private locked = false;
+  private readonly queue: Array<() => void> = [];
+
+  public async runExclusive<T>(fn: () => T | Promise<T>): Promise<T> {
+    await this.acquire();
+    try {
+      return await fn();
+    } finally {
+      this.release();
+    }
+  }
+
+  private acquire(): Promise<void> {
+    if (!this.locked) {
+      this.locked = true;
+      return Promise.resolve();
+    }
+    const { promise, resolve } = Promise.withResolvers<void>();
+    this.queue.push(resolve);
+    return promise;
+  }
+
+  private release(): void {
+    const next = this.queue.shift();
+    if (next) {
+      next();
+    } else {
+      this.locked = false;
+    }
   }
 }
