@@ -33,9 +33,17 @@ export class Board {
   private readonly grid: Spot[][];
   private readonly playerStates: Map<string, PlayerState> = new Map();
   // One deferred signal per spot, used to wake up waiters when a spot changes
-  private readonly spotSignals: { promise: Promise<void>; resolve: () => void }[][];
+  private readonly spotSignals: {
+    promise: Promise<void>;
+    resolve: () => void;
+  }[][];
   // Global mutex to serialize board state mutations
   private readonly mutex: AsyncMutex = new AsyncMutex();
+  // Global signal for watchers that resolves on the next visible board change
+  private changeSignal: { promise: Promise<void>; resolve: () => void } =
+    this.makeDeferred();
+  // Track order of controls per player: first element is the first card they gained control of
+  private controlOrder: Map<string, Array<[number, number]>>;
 
   // Abstraction function:
   //   Represents a rows x cols Memory Scramble game board where each position
@@ -84,6 +92,7 @@ export class Board {
       }
       this.spotSignals.push(rowSignals);
     }
+    this.controlOrder = new Map();
     this.checkRep();
   }
 
@@ -235,12 +244,12 @@ export class Board {
     // Rule 1-B: Face down card - turn it up
     if (!spot.faceUp) {
       spot.faceUp = true;
-      this.notifySpot(row, col);
+      this.notifySpot(row, col, true); // visible: face up
     }
 
     // Rule 1-C: Already face up but not controlled - take control
     spot.controller = player;
-    this.notifySpot(row, col);
+    this.notifySpot(row, col, false); // controller change is not a visible change
     state.firstCard = { row, col };
     state.secondCard = null;
     state.matched = false;
@@ -264,21 +273,26 @@ export class Board {
         const first = this.grid[state.firstCard.row]?.[state.firstCard.col];
         if (first) {
           first.controller = null;
-          this.notifySpot(state.firstCard.row, state.firstCard.col);
+          this.notifySpot(state.firstCard.row, state.firstCard.col, false);
         }
       }
       state.firstCard = null;
       throw new Error("no card at that position");
     }
 
-    // Rule 2-B: Card is controlled by any player (including self)
+    // Rule 2-B: Card is controlled by any player
     if (spot.controller !== null) {
-      // Relinquish control of first card
+      if (spot.controller === player) {
+        // Player is trying to flip the same card they already control (the first card).
+        // Per requested behavior: do not relinquish control; return an informative error.
+        throw new Error("you already control that card");
+      }
+      // Controlled by another player: relinquish control of first card and fail
       if (state.firstCard) {
         const first = this.grid[state.firstCard.row]?.[state.firstCard.col];
         if (first) {
           first.controller = null;
-          this.notifySpot(state.firstCard.row, state.firstCard.col);
+          this.notifySpot(state.firstCard.row, state.firstCard.col, false);
         }
       }
       state.firstCard = null;
@@ -288,7 +302,7 @@ export class Board {
     // Rule 2-C: Turn card face up if needed
     if (!spot.faceUp) {
       spot.faceUp = true;
-      this.notifySpot(row, col);
+      this.notifySpot(row, col, true); // visible
     }
 
     // Now check if cards match
@@ -305,16 +319,16 @@ export class Board {
     if (cardsMatch) {
       // Rule 2-D: Match! Keep control of both
       spot.controller = player;
-      this.notifySpot(row, col);
+      this.notifySpot(row, col, false);
       state.secondCard = { row, col };
       state.matched = true;
     } else {
       // Rule 2-E: No match. Relinquish control of both
       firstSpot.controller = null;
-      this.notifySpot(state.firstCard!.row, state.firstCard!.col);
+      this.notifySpot(state.firstCard!.row, state.firstCard!.col, false);
       spot.controller = null;
-      this.notifySpot(row, col);
-      state.firstCard = null;
+      this.notifySpot(row, col, false);
+      // Don't clear firstCard here - cleanup needs it to turn face-down
       state.secondCard = { row, col };
       state.matched = false;
     }
@@ -333,13 +347,13 @@ export class Board {
         first.card = null;
         first.faceUp = false;
         first.controller = null;
-        this.notifySpot(state.firstCard.row, state.firstCard.col);
+        this.notifySpot(state.firstCard.row, state.firstCard.col, true); // removal is visible
       }
       if (second && second.card !== null) {
         second.card = null;
         second.faceUp = false;
         second.controller = null;
-        this.notifySpot(state.secondCard.row, state.secondCard.col);
+        this.notifySpot(state.secondCard.row, state.secondCard.col, true);
       }
     } else {
       // Rule 3-B: Turn non-matching cards face down (if not controlled)
@@ -347,14 +361,14 @@ export class Board {
         const first = this.grid[state.firstCard.row]?.[state.firstCard.col];
         if (first && first.card !== null && first.controller === null) {
           first.faceUp = false;
-          this.notifySpot(state.firstCard.row, state.firstCard.col);
+          this.notifySpot(state.firstCard.row, state.firstCard.col, true); // face down visible
         }
       }
       if (state.secondCard) {
         const second = this.grid[state.secondCard.row]?.[state.secondCard.col];
         if (second && second.card !== null && second.controller === null) {
           second.faceUp = false;
-          this.notifySpot(state.secondCard.row, state.secondCard.col);
+          this.notifySpot(state.secondCard.row, state.secondCard.col, true);
         }
       }
     }
@@ -370,13 +384,35 @@ export class Board {
     return { promise, resolve };
   }
 
-  private notifySpot(row: number, col: number): void {
+  private notifySpot(row: number, col: number, visibleChange: boolean): void {
     const d = this.spotSignals[row]?.[col];
     if (!d) return;
     // resolve current deferred and replace with a new one
-    try { d.resolve(); } catch { /* already resolved; ignore */ }
+    try {
+      d.resolve();
+    } catch {
+      /* already resolved; ignore */
+    }
     const rowArr = this.spotSignals[row]!;
     rowArr[col] = this.makeDeferred();
+    if (visibleChange) {
+      this.notifyChange();
+    }
+  }
+
+  /** Resolves the global change signal and replaces it */
+  private notifyChange(): void {
+    try {
+      this.changeSignal.resolve();
+    } catch {
+      /* already resolved */
+    }
+    this.changeSignal = this.makeDeferred();
+  }
+
+  /** Wait for next visible board change (face up/down, removal, label change) */
+  public async waitForChange(): Promise<void> {
+    await this.changeSignal.promise;
   }
 
   /**
@@ -409,22 +445,27 @@ export class Board {
     // Transform each label in parallel
     const tasks: Array<Promise<void>> = [];
     for (const [label, positions] of labelToPositions.entries()) {
-      tasks.push((async () => {
-        const newLabel = await f(label);
-        assert(CARD_REGEX.test(newLabel), `map() produced invalid label: ${newLabel}`);
-        // Commit all occurrences of this label atomically
-        await this.mutex.runExclusive(() => {
-          for (const { r, c } of positions) {
-            const spot = this.grid[r]![c]!;
-            if (spot.card === label) {
-              spot.card = newLabel;
-              this.notifySpot(r, c);
+      tasks.push(
+        (async () => {
+          const newLabel = await f(label);
+          assert(
+            CARD_REGEX.test(newLabel),
+            `map() produced invalid label: ${newLabel}`
+          );
+          // Commit all occurrences of this label atomically
+          await this.mutex.runExclusive(() => {
+            for (const { r, c } of positions) {
+              const spot = this.grid[r]![c]!;
+              if (spot.card === label) {
+                spot.card = newLabel;
+                this.notifySpot(r, c, true); // label change visible
+              }
             }
-          }
-          // no change to faceUp/controller
-          this.checkRep();
-        });
-      })());
+            // no change to faceUp/controller
+            this.checkRep();
+          });
+        })()
+      );
     }
 
     await Promise.all(tasks);
