@@ -40,7 +40,9 @@ describe("Board flip operations", () => {
     const b = await Board.parseFromFile("boards/perfect.txt");
     // Flip two cards that match (you need to know board layout)
     await b.flip(0, 0, "alice"); // first card
-    try { await b.flip(0, 1, "alice"); } catch {}
+    try {
+      await b.flip(0, 1, "alice");
+    } catch {}
     await b.flip(1, 0, "alice"); // triggers cleanup (rule 3-A)
 
     const state = b.renderFor("alice");
@@ -52,7 +54,9 @@ describe("Board flip operations", () => {
 
     // Flip matching pair: (0,0)=🦄 and (0,1)=🦄
     await b.flip(0, 0, "alice"); // First card
-    try { await b.flip(0, 1, "alice"); } catch {}
+    try {
+      await b.flip(0, 1, "alice");
+    } catch {}
 
     // Start new first card - triggers cleanup (rule 3-A)
     // This removes the matched cards at (0,0) and (0,1)
@@ -71,7 +75,10 @@ describe("Board concurrency + map", () => {
     const p2 = b.flip(0, 0, "p2");
     // One of these must resolve first; await p1, then force p1 to release by attempting invalid second flip
     await p1;
-    await assert.rejects(async () => b.flip(0, 0, "p1"), /already controlled|card is already controlled/);
+    await assert.rejects(
+      async () => b.flip(0, 0, "p1"),
+      /you already control that card|card is already controlled/
+    );
     await p2; // now p2 should acquire control
     const view = b.renderFor("p2").trimEnd().split("\n");
     assert.match(view[1] ?? "", /^my /);
