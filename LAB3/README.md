@@ -259,9 +259,10 @@ export async function watch(board: Board, playerId: string): Promise<string> {
 }
 ```
 
-![Watch vs Polling Comparison](images/5.png)
+![Watching client](images/5.png)  
 _Watching client → keeps an open connection (stream) and updates automatically when the board changes_
-![Watch vs Polling Comparison](images/4.png)
+
+![Polling client](images/4.png)  
 _Polling client → repeatedly requests the board state every few seconds_
 
 ---
@@ -359,7 +360,7 @@ npm run simulation
 npm test
 ```
 
-![Web UI Screenshot](images/web-ui.png)
+![Web UI Screenshot](images/6.png)
 
 ---
 
