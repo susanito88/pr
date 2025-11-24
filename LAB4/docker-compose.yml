@@ -1,0 +1,106 @@
+version: "3.8"
+
+services:
+  leader:
+    build: .
+    container_name: kvstore_leader
+    environment:
+      - NODE_TYPE=leader
+      - PORT=5000
+      - WRITE_QUORUM=3
+      - MIN_DELAY=0.0001
+      - MAX_DELAY=0.001
+      - FOLLOWERS=http://follower1:5000,http://follower2:5000,http://follower3:5000,http://follower4:5000,http://follower5:5000
+    ports:
+      - "5000:5000"
+    networks:
+      - kvstore_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  follower1:
+    build: .
+    container_name: kvstore_follower1
+    environment:
+      - NODE_TYPE=follower
+      - PORT=5000
+    ports:
+      - "5001:5000"
+    networks:
+      - kvstore_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  follower2:
+    build: .
+    container_name: kvstore_follower2
+    environment:
+      - NODE_TYPE=follower
+      - PORT=5000
+    ports:
+      - "5002:5000"
+    networks:
+      - kvstore_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  follower3:
+    build: .
+    container_name: kvstore_follower3
+    environment:
+      - NODE_TYPE=follower
+      - PORT=5000
+    ports:
+      - "5003:5000"
+    networks:
+      - kvstore_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  follower4:
+    build: .
+    container_name: kvstore_follower4
+    environment:
+      - NODE_TYPE=follower
+      - PORT=5000
+    ports:
+      - "5004:5000"
+    networks:
+      - kvstore_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  follower5:
+    build: .
+    container_name: kvstore_follower5
+    environment:
+      - NODE_TYPE=follower
+      - PORT=5000
+    ports:
+      - "5005:5000"
+    networks:
+      - kvstore_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+networks:
+  kvstore_network:
+    driver: bridge
